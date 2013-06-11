@@ -1,0 +1,709 @@
+From 6623ae58c2f6ec4fb50faf37ff111d9ccad7b95d Mon Sep 17 00:00:00 2001
+From: Alexander Pohl <pohl1998@live.de>
+Date: Sun, 19 May 2013 13:47:49 +0200
+Subject: [PATCH] legacy armv6 support
+
+Change-Id: I139892ed8447b38e0155ee0fc8ad0c66f89a0338
+---
+ Android.mk                                         |  4 +
+ core/java/android/hardware/Camera.java             | 97 ++++++++++++++++++++++
+ core/java/android/provider/Settings.java           |  6 ++
+ core/java/android/view/WindowManager.java          |  4 +
+ core/jni/android_net_wifi_Wifi.cpp                 | 18 +++-
+ core/res/res/values/config.xml                     | 23 ++++-
+ core/res/res/values/symbols.xml                    |  7 ++
+ services/input/Android.mk                          |  4 +
+ services/input/InputReader.cpp                     | 30 +++++++
+ .../android/server/NetworkManagementService.java   | 22 +++--
+ .../server/power/DisplayPowerController.java       |  1 +
+ .../android/server/power/PowerManagerService.java  |  9 ++
+ .../android/internal/telephony/RILConstants.java   |  1 +
+ .../internal/telephony/TelephonyProperties.java    | 11 +++
+ wifi/java/android/net/wifi/WifiNative.java         |  4 +-
+ wifi/java/android/net/wifi/WifiStateMachine.java   | 35 ++++++--
+ 16 files changed, 254 insertions(+), 22 deletions(-)
+
+diff --git a/Android.mk b/Android.mk
+index 0384dca..fe4ab1b 100644
+--- a/Android.mk
++++ b/Android.mk
+@@ -30,6 +30,10 @@ framework_res_source_path := APPS/framework-res_intermediates/src
+ # ============================================================
+ include $(CLEAR_VARS)
+ 
++ifdef WIFI_AP_DRIVER_MODULE_PATH
++LOCAL_CFLAGS += -DWIFI_AP_HAS_OWN_DRIVER
++endif
++
+ # FRAMEWORKS_BASE_SUBDIRS comes from build/core/pathmap.mk
+ LOCAL_SRC_FILES := $(call find-other-java-files,$(FRAMEWORKS_BASE_SUBDIRS))
+ 
+diff --git a/core/java/android/hardware/Camera.java b/core/java/android/hardware/Camera.java
+index a300776..5c074ed 100644
+--- a/core/java/android/hardware/Camera.java
++++ b/core/java/android/hardware/Camera.java
+@@ -1685,6 +1685,7 @@ public boolean equals(Object obj) {
+         private static final String KEY_SCENE_MODE = "scene-mode";
+         private static final String KEY_FLASH_MODE = "flash-mode";
+         private static final String KEY_FOCUS_MODE = "focus-mode";
++        private static final String KEY_ISO_MODE = "iso";
+         private static final String KEY_FOCUS_AREAS = "focus-areas";
+         private static final String KEY_MAX_NUM_FOCUS_AREAS = "max-num-focus-areas";
+         private static final String KEY_FOCAL_LENGTH = "focal-length";
+@@ -1715,6 +1716,9 @@ public boolean equals(Object obj) {
+         private static final String KEY_VIDEO_SNAPSHOT_SUPPORTED = "video-snapshot-supported";
+         private static final String KEY_VIDEO_STABILIZATION = "video-stabilization";
+         private static final String KEY_VIDEO_STABILIZATION_SUPPORTED = "video-stabilization-supported";
++        private static final String KEY_POWER_MODE_SUPPORTED = "power-mode-supported";
++
++        private static final String KEY_POWER_MODE = "power-mode";
+ 
+         // Parameter key suffix for supported values.
+         private static final String SUPPORTED_VALUES_SUFFIX = "-values";
+@@ -1749,6 +1753,10 @@ public boolean equals(Object obj) {
+         public static final String ANTIBANDING_60HZ = "60hz";
+         public static final String ANTIBANDING_OFF = "off";
+ 
++        // Values for POWER MODE
++        public static final String LOW_POWER = "Low_Power";
++        public static final String NORMAL_POWER = "Normal_Power";
++
+         // Values for flash mode settings.
+         /**
+          * Flash will not be fired.
+@@ -1778,6 +1786,32 @@ public boolean equals(Object obj) {
+          */
+         public static final String FLASH_MODE_TORCH = "torch";
+ 
++        //Values for ISO settings
++        /** @hide */
++        public static final String ISO_AUTO = "auto";
++        /** @hide */
++        public static final String ISO_HJR = "ISO_HJR";
++        /** @hide */
++        public static final String ISO_SPORTS = "ISO_SPORTS";
++        /** @hide */
++        public static final String ISO_NIGHT = "ISO_NIGHT";
++        /** @hide */
++        public static final String ISO_MOVIE = "ISO_MOVIE";
++        /** @hide */
++        public static final String ISO_100 = "ISO100";
++        /** @hide */
++        public static final String ISO_200 = "ISO200";
++        /** @hide */
++        public static final String ISO_400 = "ISO400";
++        /** @hide */
++        public static final String ISO_800 = "ISO800";
++        /** @hide */
++        public static final String ISO_1600 = "ISO1600";
++        /** @hide */
++        public static final String ISO_3200 = "ISO3200";
++        /** @hide */
++        public static final String ISO_6400 = "ISO6400";
++
+         /**
+          * Scene mode is off.
+          */
+@@ -2944,6 +2978,28 @@ public void setFlashMode(String value) {
+         }
+ 
+         /**
++         * Sets the Power mode.
++         *
++         * @param value Power mode.
++         * @see #getPowerMode()
++         */
++        public void setPowerMode(String value) {
++            set(KEY_POWER_MODE, value);
++        }
++
++        /**
++         * Gets the current power mode setting.
++         *
++         * @return current power mode. null if power mode setting is not
++         *         supported.
++         * @see #POWER_MODE_LOW
++         * @see #POWER_MODE_NORMAL
++         */
++        public String getPowerMode() {
++            return get(KEY_POWER_MODE);
++        }
++
++        /**
+          * Gets the current focus mode setting.
+          *
+          * @return current focus mode. This method will always return a non-null
+@@ -3288,6 +3344,39 @@ public boolean isSmoothZoomSupported() {
+         }
+ 
+         /**
++         * Gets the current ISO setting.
++         *
++         * @return one of ISO_XXX string constant. null if ISO
++         *         setting is not supported.
++         * @hide
++         */
++        public String getISOValue() {
++            return get(KEY_ISO_MODE);
++        }
++
++        /**
++         * Sets the ISO.
++         *
++         * @param iso ISO_XXX string constant.
++         * @hide
++         */
++        public void setISOValue(String iso) {
++            set(KEY_ISO_MODE, iso);
++        }
++
++         /**
++         * Gets the supported ISO values.
++         *
++         * @return a List of ISO_MODE_XXX string constants. null if iso mode
++         *         setting is not supported.
++         * @hide
++         */
++        public List<String> getSupportedIsoValues() {
++            String str = get(KEY_ISO_MODE + SUPPORTED_VALUES_SUFFIX);
++            return split(str);
++        }
++
++        /**
+          * <p>Gets the distances from the camera to where an object appears to be
+          * in focus. The object is sharpest at the optimal focus distance. The
+          * depth of field is the far focus distance minus near focus distance.</p>
+@@ -3527,6 +3616,14 @@ public boolean isVideoSnapshotSupported() {
+         }
+ 
+         /**
++         * @return true if full size video snapshot is supported.
++         */
++        public boolean isPowerModeSupported() {
++            String str = get(KEY_POWER_MODE_SUPPORTED);
++            return TRUE.equals(str);
++        }
++
++        /**
+          * <p>Enables and disables video stabilization. Use
+          * {@link #isVideoStabilizationSupported} to determine if calling this
+          * method is valid.</p>
+diff --git a/core/java/android/provider/Settings.java b/core/java/android/provider/Settings.java
+index 753a734..ab3d3da 100644
+--- a/core/java/android/provider/Settings.java
++++ b/core/java/android/provider/Settings.java
+@@ -2650,6 +2650,12 @@ public static void setShowGTalkServiceStatusForUser(ContentResolver cr, boolean
+         public static final String VOLBTN_MUSIC_CONTROLS = "volbtn_music_controls";
+ 
+         /**
++         * Whether national data roaming should be used.
++         * @hide
++         */
++        public static final String MVNO_ROAMING = "mvno_roaming";
++
++        /**
+          * Whether to enable quiet hours.
+          * @hide
+          */
+diff --git a/core/java/android/view/WindowManager.java b/core/java/android/view/WindowManager.java
+index 6a67d8b..f6e838d 100644
+--- a/core/java/android/view/WindowManager.java
++++ b/core/java/android/view/WindowManager.java
+@@ -804,6 +804,10 @@ public InvalidDisplayException(String name) {
+          * {@hide} */
+         public static final int FLAG_SYSTEM_ERROR = 0x40000000;
+ 
++        /** Window flag: Overrides default power key behavior
++         * {@hide} */
++        public static final int PREVENT_POWER_KEY = 0x80000000;
++
+         /**
+          * Various behavioral options/flags.  Default is none.
+          * 
+diff --git a/core/jni/android_net_wifi_Wifi.cpp b/core/jni/android_net_wifi_Wifi.cpp
+index 9537ac4..9bde958 100644
+--- a/core/jni/android_net_wifi_Wifi.cpp
++++ b/core/jni/android_net_wifi_Wifi.cpp
+@@ -107,13 +107,23 @@ static jboolean android_net_wifi_isDriverLoaded(JNIEnv* env, jobject)
+     return (jboolean)(::is_wifi_driver_loaded() == 1);
+ }
+ 
+-static jboolean android_net_wifi_loadDriver(JNIEnv* env, jobject)
++static jboolean android_net_wifi_loadDriver(JNIEnv* env, jobject, int type)
+ {
++#ifdef WIFI_AP_HAS_OWN_DRIVER
++    if(type == 2) {
++	return (jboolean)(::hotspot_load_driver() == 0);
++    }
++#endif
+     return (jboolean)(::wifi_load_driver() == 0);
+ }
+ 
+-static jboolean android_net_wifi_unloadDriver(JNIEnv* env, jobject)
++static jboolean android_net_wifi_unloadDriver(JNIEnv* env, jobject, int type)
+ {
++#ifdef WIFI_AP_HAS_OWN_DRIVER
++    if(type == 2) {
++	return (jboolean)(::hotspot_unload_driver() == 0);
++    }
++#endif
+     return (jboolean)(::wifi_unload_driver() == 0);
+ }
+ 
+@@ -200,9 +210,9 @@ static jstring android_net_wifi_doStringCommand(JNIEnv* env, jobject, jstring jI
+ static JNINativeMethod gWifiMethods[] = {
+     /* name, signature, funcPtr */
+ 
+-    { "loadDriver", "()Z",  (void *)android_net_wifi_loadDriver },
++    { "loadDriver", "(I)Z",  (void *)android_net_wifi_loadDriver },
+     { "isDriverLoaded", "()Z",  (void *)android_net_wifi_isDriverLoaded },
+-    { "unloadDriver", "()Z",  (void *)android_net_wifi_unloadDriver },
++    { "unloadDriver", "(I)Z",  (void *)android_net_wifi_unloadDriver },
+     { "startSupplicant", "(Z)Z",  (void *)android_net_wifi_startSupplicant },
+     { "killSupplicant", "(Z)Z",  (void *)android_net_wifi_killSupplicant },
+     { "connectToSupplicant", "(Ljava/lang/String;)Z",
+diff --git a/core/res/res/values/config.xml b/core/res/res/values/config.xml
+index d19fe9b..55991c2 100755
+--- a/core/res/res/values/config.xml
++++ b/core/res/res/values/config.xml
+@@ -274,6 +274,13 @@
+          note that empty fields can be ommitted: "name,apn,,,,,,,,,310,260,,DUN" -->
+     <string translatable="false" name="config_tether_apndata"></string>
+ 
++    <!-- Boolean indicating whether Softap requires reloading AP firmware -->
++    <bool name="config_wifiApFirmwareReload">true</bool>
++
++    <!-- Boolean indicating whether the start command should be called on the wireless interface
++         when starting the SoftAp -->
++    <bool name="config_wifiApStartInterface">false</bool>
++
+     <!-- Boolean indicating whether the wifi chipset has dual frequency band support -->
+     <bool translatable="false" name="config_wifi_dual_band_support">false</bool>
+ 
+@@ -548,7 +555,7 @@
+          This needs to match the constants in
+          policy/src/com/android/internal/policy/impl/PhoneWindowManager.java
+     -->
+-    <integer name="config_longPressOnHomeBehavior">0</integer>
++    <integer name="config_longPressOnHomeBehavior">2</integer>
+ 
+     <!-- Array of light sensor LUX values to define our levels for auto backlight brightness support.
+          The N entries of this array define N + 1 control points as follows:
+@@ -806,6 +813,14 @@
+     <!-- The VoiceMail default value is displayed to my own number if it is true -->
+     <bool name="config_telephony_use_own_number_for_voicemail">false</bool>
+ 
++    <!-- Set additional audio parameters for incall audio
++         Usage: parameter=onstring=offstring
++         Examples: <item>realcall=on=off</item>
++                   <item>dualmic_enabled=true=false</item>
++                   <item>mic_boost=yes=no</item> -->
++    <string-array name="config_telephony_set_audioparameters" translatable="false">
++    </string-array>
++
+     <!-- If this value is true, Sms encoded as octet is decoded by utf8 decoder.
+          If false, decoded by Latin decoder. -->
+     <bool name="config_sms_utf8_support">false</bool>
+@@ -1051,6 +1066,12 @@
+     <!-- Flag indicating if the speed up audio on mt call code should be executed -->
+     <bool name="config_speed_up_audio_on_mt_calls">false</bool>
+ 
++    <!-- Boolean to enable stk functionality on Samsung phones -->
++    <bool name="config_samsung_stk">false</bool>
++
++    <!-- If this value is true, we handle Samsung CDMA's message ID method -->
++    <bool name="config_smsSamsungCdmaAlternateMessageIDEncoding">false</bool>
++
+                         <!--OPPO changes -->
+     <!-- Disable the home key unlock setting -->
+     <bool name="config_disableHomeUnlockSetting">true</bool>
+diff --git a/core/res/res/values/symbols.xml b/core/res/res/values/symbols.xml
+index 56909de..d9fa979 100644
+--- a/core/res/res/values/symbols.xml
++++ b/core/res/res/values/symbols.xml
+@@ -278,6 +278,9 @@
+   <java-symbol type="bool" name="config_camera_sound_forced" />
+   <java-symbol type="bool" name="config_dontPreferApn" />
+   <java-symbol type="bool" name="config_speed_up_audio_on_mt_calls" />
++  <java-symbol type="bool" name="config_smsSamsungCdmaAlternateMessageIDEncoding" />
++  <java-symbol type="bool" name="config_samsung_stk" />
++  <java-symbol type="bool" name="config_wifiApFirmwareReload" />
+ 
+   <java-symbol type="integer" name="config_cursorWindowSize" />
+   <java-symbol type="integer" name="config_longPressOnPowerBehavior" />
+@@ -897,6 +900,7 @@
+   <java-symbol type="array" name="special_locale_names" />
+   <java-symbol type="array" name="config_masterVolumeRamp" />
+   <java-symbol type="array" name="config_cdma_dun_supported_types" />
++  <java-symbol type="array" name="config_telephony_set_audioparameters" />
+ 
+   <java-symbol type="drawable" name="default_wallpaper" />
+   <java-symbol type="drawable" name="indicator_input_error" />
+@@ -1889,4 +1893,7 @@
+   <java-symbol type="string" name="second" />
+   <java-symbol type="string" name="seconds" />
+ 
++  <!-- Wifi -->
++  <java-symbol type="bool" name="config_wifiApStartInterface" />
++
+ </resources>
+diff --git a/services/input/Android.mk b/services/input/Android.mk
+index 159800f..322ad1b 100644
+--- a/services/input/Android.mk
++++ b/services/input/Android.mk
+@@ -40,6 +40,10 @@ LOCAL_SHARED_LIBRARIES := \
+ LOCAL_C_INCLUDES := \
+     external/skia/include/core
+ 
++ifeq ($(BOARD_USE_LEGACY_TOUCHSCREEN),true)
++LOCAL_CFLAGS += -DLEGACY_TOUCHSCREEN
++endif
++
+ LOCAL_MODULE:= libinput
+ 
+ LOCAL_MODULE_TAGS := optional
+diff --git a/services/input/InputReader.cpp b/services/input/InputReader.cpp
+index bc8df18..e61c6ba 100644
+--- a/services/input/InputReader.cpp
++++ b/services/input/InputReader.cpp
+@@ -1341,6 +1341,12 @@ void TouchButtonAccumulator::process(const RawEvent* rawEvent) {
+             break;
+         }
+     }
++#ifdef LEGACY_TOUCHSCREEN
++    // set true to mBtnTouch by multi-touch event with pressure more than zero
++    // some touchscreen driver which has BTN_TOUCH feature doesn't send BTN_TOUCH event
++    else if (rawEvent->type == EV_ABS && rawEvent->code == ABS_MT_TOUCH_MAJOR && rawEvent->value > 0)
++        mBtnTouch = true;
++#endif
+ }
+ 
+ uint32_t TouchButtonAccumulator::getButtonState() const {
+@@ -1623,7 +1629,12 @@ void MultiTouchMotionAccumulator::process(const RawEvent* rawEvent) {
+                 break;
+             case ABS_MT_TOUCH_MAJOR:
+                 slot->mInUse = true;
++#ifdef LEGACY_TOUCHSCREEN
++                // emulate ABS_MT_PRESSURE
++                slot->mAbsMTPressure = rawEvent->value;
++#else
+                 slot->mAbsMTTouchMajor = rawEvent->value;
++#endif
+                 break;
+             case ABS_MT_TOUCH_MINOR:
+                 slot->mInUse = true;
+@@ -1632,7 +1643,12 @@ void MultiTouchMotionAccumulator::process(const RawEvent* rawEvent) {
+                 break;
+             case ABS_MT_WIDTH_MAJOR:
+                 slot->mInUse = true;
++#ifdef LEGACY_TOUCHSCREEN
++                // emulate ABS_MT_TOUCH_MAJOR
++                slot->mAbsMTTouchMajor = rawEvent->value;
++#else
+                 slot->mAbsMTWidthMajor = rawEvent->value;
++#endif
+                 break;
+             case ABS_MT_WIDTH_MINOR:
+                 slot->mInUse = true;
+@@ -1669,6 +1685,12 @@ void MultiTouchMotionAccumulator::process(const RawEvent* rawEvent) {
+             }
+         }
+     } else if (rawEvent->type == EV_SYN && rawEvent->code == SYN_MT_REPORT) {
++#ifdef LEGACY_TOUCHSCREEN
++        // don't use the slot with pressure less than or qeual to zero
++        // some touchscreen driver sends multi-touch event for not-in-use pointer
++        if (mSlots[mCurrentSlot].mAbsMTPressure <= 0)
++            mSlots[mCurrentSlot].mInUse = false;
++#endif
+         // MultiTouch Sync: The driver has returned all data for *one* of the pointers.
+         mCurrentSlot += 1;
+     }
+@@ -5984,12 +6006,20 @@ void MultiTouchInputMapper::configureRawPointerAxes() {
+ 
+     getAbsoluteAxisInfo(ABS_MT_POSITION_X, &mRawPointerAxes.x);
+     getAbsoluteAxisInfo(ABS_MT_POSITION_Y, &mRawPointerAxes.y);
++#ifdef LEGACY_TOUCHSCREEN
++    getAbsoluteAxisInfo(ABS_MT_WIDTH_MAJOR, &mRawPointerAxes.touchMajor);
++#else
+     getAbsoluteAxisInfo(ABS_MT_TOUCH_MAJOR, &mRawPointerAxes.touchMajor);
++#endif
+     getAbsoluteAxisInfo(ABS_MT_TOUCH_MINOR, &mRawPointerAxes.touchMinor);
+     getAbsoluteAxisInfo(ABS_MT_WIDTH_MAJOR, &mRawPointerAxes.toolMajor);
+     getAbsoluteAxisInfo(ABS_MT_WIDTH_MINOR, &mRawPointerAxes.toolMinor);
+     getAbsoluteAxisInfo(ABS_MT_ORIENTATION, &mRawPointerAxes.orientation);
++#ifdef LEGACY_TOUCHSCREEN
++    getAbsoluteAxisInfo(ABS_MT_TOUCH_MAJOR, &mRawPointerAxes.pressure);
++#else
+     getAbsoluteAxisInfo(ABS_MT_PRESSURE, &mRawPointerAxes.pressure);
++#endif
+     getAbsoluteAxisInfo(ABS_MT_DISTANCE, &mRawPointerAxes.distance);
+     getAbsoluteAxisInfo(ABS_MT_TRACKING_ID, &mRawPointerAxes.trackingId);
+     getAbsoluteAxisInfo(ABS_MT_SLOT, &mRawPointerAxes.slot);
+diff --git a/services/java/com/android/server/NetworkManagementService.java b/services/java/com/android/server/NetworkManagementService.java
+index 3ddae3e..9fda3a2 100644
+--- a/services/java/com/android/server/NetworkManagementService.java
++++ b/services/java/com/android/server/NetworkManagementService.java
+@@ -37,6 +37,7 @@
+ 
+ import android.bluetooth.BluetoothTetheringDataTracker;
+ import android.content.Context;
++import android.content.res.Resources;
+ import android.net.INetworkManagementEventObserver;
+ import android.net.InterfaceConfiguration;
+ import android.net.LinkAddress;
+@@ -1008,14 +1009,23 @@ public void detachPppd(String tty) {
+ 
+     @Override
+     public void startAccessPoint(
+-            WifiConfiguration wifiConfig, String wlanIface) {
++            WifiConfiguration wifiConfig, String softapIface) {
+         mContext.enforceCallingOrSelfPermission(CONNECTIVITY_INTERNAL, TAG);
+         try {
+-            wifiFirmwareReload(wlanIface, "AP");
++            Resources resources = mContext.getResources();
++            if (resources.getBoolean(
++                        com.android.internal.R.bool.config_wifiApFirmwareReload)) {
++                wifiFirmwareReload(softapIface, "AP");
++            }
++
++            if (resources.getBoolean(
++                        com.android.internal.R.bool.config_wifiApStartInterface)) {
++                mConnector.execute("softap", "start", softapIface);
++            }
+             if (wifiConfig == null) {
+-                mConnector.execute("softap", "set", wlanIface);
++                mConnector.execute("softap", "set", softapIface);
+             } else {
+-                mConnector.execute("softap", "set", wlanIface, wifiConfig.SSID,
++                mConnector.execute("softap", "set", softapIface, wifiConfig.SSID,
+                         getSecurityType(wifiConfig), wifiConfig.preSharedKey);
+             }
+             mConnector.execute("softap", "startap");
+@@ -1047,11 +1057,11 @@ public void wifiFirmwareReload(String wlanIface, String mode) {
+     }
+ 
+     @Override
+-    public void stopAccessPoint(String wlanIface) {
++    public void stopAccessPoint(String softapIface) {
+         mContext.enforceCallingOrSelfPermission(CONNECTIVITY_INTERNAL, TAG);
+         try {
+             mConnector.execute("softap", "stopap");
+-            wifiFirmwareReload(wlanIface, "STA");
++            wifiFirmwareReload(softapIface, "STA");
+         } catch (NativeDaemonConnectorException e) {
+             throw e.rethrowAsParcelableException();
+         }
+diff --git a/services/java/com/android/server/power/DisplayPowerController.java b/services/java/com/android/server/power/DisplayPowerController.java
+index 7219135..a774fc5 100644
+--- a/services/java/com/android/server/power/DisplayPowerController.java
++++ b/services/java/com/android/server/power/DisplayPowerController.java
+@@ -845,6 +845,7 @@ private void setScreenOn(boolean on) {
+             if (on) {
+                 mNotifier.onScreenOn();
+             } else {
++                mLights.getLight(LightsService.LIGHT_ID_BUTTONS).setBrightness(0);
+                 mNotifier.onScreenOff();
+             }
+         }
+diff --git a/services/java/com/android/server/power/PowerManagerService.java b/services/java/com/android/server/power/PowerManagerService.java
+index 546f22e..7efe9b1 100644
+--- a/services/java/com/android/server/power/PowerManagerService.java
++++ b/services/java/com/android/server/power/PowerManagerService.java
+@@ -148,6 +148,7 @@
+     // This is subtracted from the end of the screen off timeout so the
+     // minimum screen off timeout should be longer than this.
+     private static final int SCREEN_DIM_DURATION = 7 * 1000;
++    private static final int BUTTON_ON_DURATION = 5 * 1000;
+ 
+     // The maximum screen dim time expressed as a ratio relative to the screen
+     // off timeout.  If the screen off timeout is very short then we want the
+@@ -180,6 +181,7 @@
+     private SettingsObserver mSettingsObserver;
+     private DreamManagerService mDreamManager;
+     private LightsService.Light mAttentionLight;
++    private LightsService.Light mButtonsLight;
+ 
+     private final Object mLock = new Object();
+ 
+@@ -440,6 +442,7 @@ public void systemReady(TwilightService twilight, DreamManagerService dreamManag
+                     createSuspendBlockerLocked("PowerManagerService.WirelessChargerDetector"));
+             mSettingsObserver = new SettingsObserver(mHandler);
+             mAttentionLight = mLightsService.getLight(LightsService.LIGHT_ID_ATTENTION);
++            mButtonsLight = mLightsService.getLight(LightsService.LIGHT_ID_BUTTONS);
+ 
+             // Register for broadcasts from other components of the system.
+             IntentFilter filter = new IntentFilter();
+@@ -1300,6 +1303,12 @@ private void updateUserActivitySummaryLocked(long now, int dirty) {
+                     nextTimeout = mLastUserActivityTime
+                             + screenOffTimeout - screenDimDuration;
+                     if (now < nextTimeout) {
++                        if (now > mLastUserActivityTime + BUTTON_ON_DURATION) {
++                            mButtonsLight.setBrightness(0);
++                        } else {
++                            mButtonsLight.setBrightness(mDisplayPowerRequest.screenBrightness);
++                            nextTimeout = now + BUTTON_ON_DURATION;
++                        }
+                         mUserActivitySummary |= USER_ACTIVITY_SCREEN_BRIGHT;
+                     } else {
+                         nextTimeout = mLastUserActivityTime + screenOffTimeout;
+diff --git a/telephony/java/com/android/internal/telephony/RILConstants.java b/telephony/java/com/android/internal/telephony/RILConstants.java
+index 077ad68..d93da8f 100644
+--- a/telephony/java/com/android/internal/telephony/RILConstants.java
++++ b/telephony/java/com/android/internal/telephony/RILConstants.java
+@@ -297,4 +297,5 @@
+     int RIL_UNSOL_EXIT_EMERGENCY_CALLBACK_MODE = 1033;
+     int RIL_UNSOL_RIL_CONNECTED = 1034;
+     int RIL_UNSOL_VOICE_RADIO_TECH_CHANGED = 1035;
++    int RIL_UNSOL_STK_SEND_SMS_RESULT = 11002; /* Samsung STK */
+ }
+diff --git a/telephony/java/com/android/internal/telephony/TelephonyProperties.java b/telephony/java/com/android/internal/telephony/TelephonyProperties.java
+index 41f87a3..76a4326 100644
+--- a/telephony/java/com/android/internal/telephony/TelephonyProperties.java
++++ b/telephony/java/com/android/internal/telephony/TelephonyProperties.java
+@@ -192,4 +192,15 @@
+      * Ignore RIL_UNSOL_NITZ_TIME_RECEIVED completely, used for debugging/testing.
+      */
+     static final String PROPERTY_IGNORE_NITZ = "telephony.test.ignore.nitz";
++
++    /**
++      * Set to true to indicates support for simultaneous voice and data.
++      */
++     static final String PROPERTY_SVDATA = "ro.config.svlte1x";
++
++    /**
++     * Property to control alpha ID display for proactive commands
++     * Type: boolean ( true = alpha display enabled, false = alpha display disabled)
++     */
++    static final String PROPERTY_ALPHA_USRCNF = "persist.atel.noalpha.usrcnf";
+ }
+diff --git a/wifi/java/android/net/wifi/WifiNative.java b/wifi/java/android/net/wifi/WifiNative.java
+index 5e25623..5a8b3e8 100644
+--- a/wifi/java/android/net/wifi/WifiNative.java
++++ b/wifi/java/android/net/wifi/WifiNative.java
+@@ -51,11 +51,11 @@
+     String mInterface = "";
+     private boolean mSuspendOptEnabled = false;
+ 
+-    public native static boolean loadDriver();
++    public native static boolean loadDriver(int type);
+ 
+     public native static boolean isDriverLoaded();
+ 
+-    public native static boolean unloadDriver();
++    public native static boolean unloadDriver(int type);
+ 
+     public native static boolean startSupplicant(boolean p2pSupported);
+ 
+diff --git a/wifi/java/android/net/wifi/WifiStateMachine.java b/wifi/java/android/net/wifi/WifiStateMachine.java
+index b0930c7..0ecdbb4 100644
+--- a/wifi/java/android/net/wifi/WifiStateMachine.java
++++ b/wifi/java/android/net/wifi/WifiStateMachine.java
+@@ -127,6 +127,7 @@
+     private final boolean mBackgroundScanSupported;
+ 
+     private String mInterfaceName;
++    private String mSoftapInterfaceName;
+     /* Tethering interface could be seperate from wlan interface */
+     private String mTetherInterfaceName;
+ 
+@@ -575,7 +576,7 @@ public WifiStateMachine(Context context, String wlanInterface) {
+ 
+         mContext = context;
+         mInterfaceName = wlanInterface;
+-
++        mSoftapInterfaceName = SystemProperties.get("wifi.ap.interface", mInterfaceName);
+         mNetworkInfo = new NetworkInfo(ConnectivityManager.TYPE_WIFI, 0, NETWORKTYPE, "");
+         mBatteryStats = IBatteryStats.Stub.asInterface(ServiceManager.getService("batteryinfo"));
+ 
+@@ -1877,12 +1878,12 @@ private void startSoftApWithConfig(final WifiConfiguration config) {
+         new Thread(new Runnable() {
+             public void run() {
+                 try {
+-                    mNwService.startAccessPoint(config, mInterfaceName);
++                    mNwService.startAccessPoint(config, mSoftapInterfaceName);
+                 } catch (Exception e) {
+                     loge("Exception in softap start " + e);
+                     try {
+-                        mNwService.stopAccessPoint(mInterfaceName);
+-                        mNwService.startAccessPoint(config, mInterfaceName);
++                        mNwService.stopAccessPoint(mSoftapInterfaceName);
++                        mNwService.startAccessPoint(config, mSoftapInterfaceName);
+                     } catch (Exception e1) {
+                         loge("Exception in softap re-start " + e1);
+                         sendMessage(CMD_START_AP_FAILURE);
+@@ -2103,18 +2104,22 @@ public void enter() {
+              */
+             new Thread(new Runnable() {
+                 public void run() {
++                    int type = 1;
++
+                     mWakeLock.acquire();
+                     //enabling state
+                     switch(message.arg1) {
+                         case WIFI_STATE_ENABLING:
+                             setWifiState(WIFI_STATE_ENABLING);
++			    type = 1;
+                             break;
+                         case WIFI_AP_STATE_ENABLING:
+                             setWifiApState(WIFI_AP_STATE_ENABLING);
++			    type = 2;
+                             break;
+                     }
+ 
+-                    if(mWifiNative.loadDriver()) {
++                    if(mWifiNative.loadDriver(type)) {
+                         if (DBG) log("Driver load successful");
+                         sendMessage(CMD_LOAD_DRIVER_SUCCESS);
+                     } else {
+@@ -2236,9 +2241,21 @@ public void enter() {
+             message.copyFrom(getCurrentMessage());
+             new Thread(new Runnable() {
+                 public void run() {
++                    int type = 1;
++
+                     if (DBG) log(getName() + message.toString() + "\n");
+                     mWakeLock.acquire();
+-                    if(mWifiNative.unloadDriver()) {
++                    switch(message.arg1) {
++                       case WIFI_STATE_DISABLED:
++                       case WIFI_STATE_UNKNOWN:
++                           type = 1;
++                           break;
++                       case WIFI_AP_STATE_DISABLED:
++                       case WIFI_AP_STATE_FAILED:
++                           type = 2;
++                           break;
++                    }
++                    if(mWifiNative.unloadDriver(type)) {
+                         if (DBG) log("Driver unload successful");
+                         sendMessage(CMD_UNLOAD_DRIVER_SUCCESS);
+ 
+@@ -3900,7 +3917,7 @@ public boolean processMessage(Message message) {
+ 
+                     /* We have not tethered at this point, so we just shutdown soft Ap */
+                     try {
+-                        mNwService.stopAccessPoint(mInterfaceName);
++                        mNwService.stopAccessPoint(mSoftapInterfaceName);
+                     } catch(Exception e) {
+                         loge("Exception in stopAccessPoint()");
+                     }
+@@ -4028,7 +4045,7 @@ public boolean processMessage(Message message) {
+                     if (isWifiTethered(stateChange.active)) break;
+ 
+                     try {
+-                        mNwService.stopAccessPoint(mInterfaceName);
++                        mNwService.stopAccessPoint(mSoftapInterfaceName);
+                     } catch(Exception e) {
+                         loge("Exception in stopAccessPoint()");
+                     }
+@@ -4038,7 +4055,7 @@ public boolean processMessage(Message message) {
+                     if (message.arg1 == mTetherToken) {
+                         loge("Failed to get tether update, force stop access point");
+                         try {
+-                            mNwService.stopAccessPoint(mInterfaceName);
++                            mNwService.stopAccessPoint(mSoftapInterfaceName);
+                         } catch(Exception e) {
+                             loge("Exception in stopAccessPoint()");
+                         }
+-- 
+1.8.1.6

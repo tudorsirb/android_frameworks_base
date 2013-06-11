@@ -37,6 +37,7 @@ import static com.android.server.NetworkManagementSocketTagger.PROP_QTAGUID_ENAB
 
 import android.bluetooth.BluetoothTetheringDataTracker;
 import android.content.Context;
+import android.content.res.Resources;
 import android.net.INetworkManagementEventObserver;
 import android.net.InterfaceConfiguration;
 import android.net.LinkAddress;
@@ -1008,14 +1009,23 @@ public class NetworkManagementService extends INetworkManagementService.Stub
 
     @Override
     public void startAccessPoint(
-            WifiConfiguration wifiConfig, String wlanIface) {
+            WifiConfiguration wifiConfig, String softapIface) {
         mContext.enforceCallingOrSelfPermission(CONNECTIVITY_INTERNAL, TAG);
         try {
-            wifiFirmwareReload(wlanIface, "AP");
+            Resources resources = mContext.getResources();
+            if (resources.getBoolean(
+                        com.android.internal.R.bool.config_wifiApFirmwareReload)) {
+                wifiFirmwareReload(softapIface, "AP");
+            }
+
+            if (resources.getBoolean(
+                        com.android.internal.R.bool.config_wifiApStartInterface)) {
+                mConnector.execute("softap", "start", softapIface);
+            }
             if (wifiConfig == null) {
-                mConnector.execute("softap", "set", wlanIface);
+                mConnector.execute("softap", "set", softapIface);
             } else {
-                mConnector.execute("softap", "set", wlanIface, wifiConfig.SSID,
+                mConnector.execute("softap", "set", softapIface, wifiConfig.SSID,
                         getSecurityType(wifiConfig), wifiConfig.preSharedKey);
             }
             mConnector.execute("softap", "startap");
@@ -1047,11 +1057,11 @@ public class NetworkManagementService extends INetworkManagementService.Stub
     }
 
     @Override
-    public void stopAccessPoint(String wlanIface) {
+    public void stopAccessPoint(String softapIface) {
         mContext.enforceCallingOrSelfPermission(CONNECTIVITY_INTERNAL, TAG);
         try {
             mConnector.execute("softap", "stopap");
-            wifiFirmwareReload(wlanIface, "STA");
+            wifiFirmwareReload(softapIface, "STA");
         } catch (NativeDaemonConnectorException e) {
             throw e.rethrowAsParcelableException();
         }
