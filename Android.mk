@@ -26,6 +26,7 @@ LOCAL_PATH := $(call my-dir)
 # TODO: find a more appropriate way to do this.
 framework_res_source_path := APPS/framework-res_intermediates/src
 
+=======
 # Include the bluetoothmsm for bluez frameworks
 ifeq ($(BOARD_HAVE_BLUETOOTH_BLUEZ), true)
 FRAMEWORKS_BASE_SUBDIRS += \
