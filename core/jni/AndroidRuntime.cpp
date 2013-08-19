@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2006 The Android Open Source Project
+ * Copyright (c) 2013, The Linux Foundation. All rights reserved
  * This code has been modified.  Portions copyright (C) 2012, ParanoidAndroid Project.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -176,6 +177,15 @@ extern int register_android_content_res_Configuration(JNIEnv* env);
 extern int register_android_animation_PropertyValuesHolder(JNIEnv *env);
 extern int register_com_android_internal_content_NativeLibraryHelper(JNIEnv *env);
 extern int register_android_content_res_PackageRedirectionMap(JNIEnv* env);
+
+#ifdef HAVE_BLUEZ_JNI
+extern int register_android_bluetooth_HeadsetBase(JNIEnv* env);
+extern int register_android_bluetooth_BluetoothAudioGateway(JNIEnv* env);
+extern int register_android_bluetooth_BluetoothSocket(JNIEnv *env);
+extern int register_android_server_BluetoothService(JNIEnv* env);
+extern int register_android_server_BluetoothEventLoop(JNIEnv *env);
+extern int register_android_server_BluetoothA2dpService(JNIEnv* env);
+#endif //HAVE_BLUEZ_JNI
 
 static AndroidRuntime* gCurRuntime = NULL;
 
@@ -1217,6 +1227,19 @@ static const RegJNIRec gRegJNI[] = {
     REG_JNI(register_android_animation_PropertyValuesHolder),
     REG_JNI(register_com_android_internal_content_NativeLibraryHelper),
     REG_JNI(register_android_content_res_PackageRedirectionMap),
+
+#ifdef QCOM_HARDWARE
+    REG_JNI(register_com_android_internal_app_ActivityTrigger),
+#endif
+
+#ifdef HAVE_BLUEZ_JNI
+    REG_JNI(register_android_bluetooth_HeadsetBase),
+    REG_JNI(register_android_bluetooth_BluetoothAudioGateway),
+    REG_JNI(register_android_bluetooth_BluetoothSocket),
+    REG_JNI(register_android_server_BluetoothService),
+    REG_JNI(register_android_server_BluetoothEventLoop),
+    REG_JNI(register_android_server_BluetoothA2dpService),
+#endif //HAVE_BLUEZ_JNI
 };
 
 /*
