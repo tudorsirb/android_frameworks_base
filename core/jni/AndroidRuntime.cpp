@@ -177,6 +177,9 @@ extern int register_android_content_res_Configuration(JNIEnv* env);
 extern int register_android_animation_PropertyValuesHolder(JNIEnv *env);
 extern int register_com_android_internal_content_NativeLibraryHelper(JNIEnv *env);
 extern int register_android_content_res_PackageRedirectionMap(JNIEnv* env);
+#ifdef QCOM_HARDWARE
+extern int register_com_android_internal_app_ActivityTrigger(JNIEnv *env);
+#endif
 
 #ifdef HAVE_BLUEZ_JNI
 extern int register_android_bluetooth_HeadsetBase(JNIEnv* env);
